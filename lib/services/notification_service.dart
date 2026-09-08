@@ -40,7 +40,7 @@ class NotificationService {
     // 1. Timezone database + device local timezone (spec #13).
     tz_data.initializeTimeZones();
     try {
-      final localName = (await FlutterTimezone.getLocalTimezone()).name;
+      final localName = (await FlutterTimezone.getLocalTimezone()).identifier;
       tz.setLocalLocation(tz.getLocation(localName));
       _timezoneReady = true;
       dev.log('Timezone set to $localName', name: 'NotificationService');
@@ -334,7 +334,7 @@ class NotificationService {
       // Best-effort retry so a transient failure at startup doesn't
       // permanently break scheduling for the rest of the session.
       try {
-        final localName = (await FlutterTimezone.getLocalTimezone()).name;
+        final localName = (await FlutterTimezone.getLocalTimezone()).identifier;
         tz.setLocalLocation(tz.getLocation(localName));
         _timezoneReady = true;
       } catch (_) {
