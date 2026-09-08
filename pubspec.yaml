@@ -41,6 +41,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  assets:
+    - assets/sounds/class_alarm.mp3
+
   dependencies:
   flutter:
     sdk: flutter
