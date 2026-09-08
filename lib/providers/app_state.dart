@@ -11,12 +11,15 @@ import '../models/note.dart';
 import '../models/app_settings.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
+import '../services/class_alarm_service.dart';
 import '../utils/date_utils.dart';
 import '../utils/weekday.dart';
 
 class AppState extends ChangeNotifier {
   final StorageService storage;
   final NotificationService notifications;
+  final ClassAlarmService classAlarms =
+      ClassAlarmService.instance;
   final Uuid _uuid = const Uuid();
 
   AppState({
@@ -45,6 +48,9 @@ class AppState extends ChangeNotifier {
       debugPrint('BOOT 2: notifications.init');
       await notifications.init();
 
+      debugPrint('BOOT 2.5: class alarms.init');
+      await classAlarms.init();
+
       debugPrint('BOOT 3: load tasks');
       tasks = await storage.loadTasks();
 
@@ -65,11 +71,22 @@ class AppState extends ChangeNotifier {
       debugPrint('BOOT 8: load settings');
       settings = await storage.loadSettings();
 
-      debugPrint('BOOT 9: restore notifications');
+      // Restore TASK notifications only.
+      // Classes are restored separately as real looping alarms.
+      debugPrint('BOOT 9: restore task notifications');
       await notifications.restoreAll(
         tasks: tasks,
-        classes: classes,
+        classes: [],
       );
+
+      // Restore all saved recurring class alarms.
+      debugPrint('BOOT 9.5: restore class alarms');
+
+      for (final ClassModel c in classes) {
+        unawaited(
+          _safeScheduleClassAlarm(c),
+        );
+      }
 
       debugPrint('BOOT 10: COMPLETE');
     } catch (e, st) {
@@ -105,13 +122,12 @@ class AppState extends ChangeNotifier {
               settings.defaultReminderLeadMinutes,
     );
 
-    // Save the actual task first.
     tasks = [...tasks, task];
 
     await storage.saveTasks(tasks);
 
-    // Saving is complete. Notification work must never
-    // prevent the form from closing.
+    // Notification work must never prevent
+    // the form from closing.
     unawaited(
       _safeScheduleTaskReminder(task),
     );
@@ -136,8 +152,6 @@ class AppState extends ChangeNotifier {
 
     await storage.saveTasks(tasks);
 
-    // Schedule separately so notification problems cannot
-    // make the save operation appear to fail.
     unawaited(
       _safeScheduleTaskReminder(updated),
     );
@@ -311,7 +325,8 @@ class AppState extends ChangeNotifier {
 
     await storage.saveClasses(classes);
 
-    // Notification work is separate from the save.
+    // Schedule the REAL looping alarm separately.
+    // It cannot prevent the form from closing.
     unawaited(
       _safeScheduleClassAlarm(classModel),
     );
@@ -337,6 +352,7 @@ class AppState extends ChangeNotifier {
 
     await storage.saveClasses(classes);
 
+    // Replace the existing alarm with the updated one.
     unawaited(
       _safeScheduleClassAlarm(updated),
     );
@@ -368,12 +384,10 @@ class AppState extends ChangeNotifier {
     ClassModel classModel,
   ) async {
     try {
-      await notifications.scheduleClassAlarm(
-        classModel,
-      );
+      await classAlarms.schedule(classModel);
     } catch (e, st) {
       debugPrint(
-        'Class notification failed: $e',
+        'Class alarm failed: $e',
       );
       debugPrint('$st');
     }
@@ -383,12 +397,10 @@ class AppState extends ChangeNotifier {
     ClassModel classModel,
   ) async {
     try {
-      await notifications.cancelClassAlarm(
-        classModel,
-      );
+      await classAlarms.cancel(classModel);
     } catch (e, st) {
       debugPrint(
-        'Class notification cancellation failed: $e',
+        'Class alarm cancellation failed: $e',
       );
       debugPrint('$st');
     }
