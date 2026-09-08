@@ -11,14 +11,6 @@ import '../models/class_model.dart';
 import '../models/task.dart';
 import '../utils/weekday.dart';
 
-/// Provides real OS-level notifications for Study Buddy.
-///
-/// Tasks use one-time scheduled notifications.
-/// Classes use weekly recurring notifications.
-///
-/// Notifications are completely separate from saving app data:
-/// if notification scheduling fails, the task/class itself should still
-/// remain saved.
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -26,24 +18,26 @@ class NotificationService {
   bool _initialized = false;
   bool _timezoneReady = false;
 
-  static const String _taskChannelId = 'study_buddy_tasks';
-  static const String _classChannelId = 'study_buddy_classes';
+  static const String _taskChannelId =
+      'study_buddy_tasks';
 
-  // ============================================================
-  // INITIALIZATION
-  // ============================================================
+  static const String _classChannelId =
+      'study_buddy_classes';
 
   Future<void> init() async {
     if (_initialized) return;
 
-    // Initialize timezone database.
     tz_data.initializeTimeZones();
 
     try {
       final String localName =
-          (await FlutterTimezone.getLocalTimezone()).identifier;
+          (await FlutterTimezone.getLocalTimezone())
+              .identifier;
 
-      tz.setLocalLocation(tz.getLocation(localName));
+      tz.setLocalLocation(
+        tz.getLocation(localName),
+      );
+
       _timezoneReady = true;
 
       dev.log(
@@ -61,10 +55,6 @@ class NotificationService {
       _timezoneReady = false;
     }
 
-    // Android notification icon.
-    //
-    // This must exist at:
-    // android/app/src/main/res/drawable/ic_stat_study_buddy.xml
     const AndroidInitializationSettings androidInit =
         AndroidInitializationSettings(
       '@drawable/ic_stat_study_buddy',
@@ -85,8 +75,8 @@ class NotificationService {
 
     await _plugin.initialize(initSettings);
 
-    // Create Android notification channels.
-    final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+    final AndroidFlutterLocalNotificationsPlugin?
+        androidPlugin =
         _plugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
 
@@ -95,7 +85,8 @@ class NotificationService {
         const AndroidNotificationChannel(
           _taskChannelId,
           'Task reminders',
-          description: 'Reminders for tasks you\'ve scheduled.',
+          description:
+              'Reminders for tasks you\'ve scheduled.',
           importance: Importance.high,
         ),
       );
@@ -104,7 +95,8 @@ class NotificationService {
         const AndroidNotificationChannel(
           _classChannelId,
           'Class alarms',
-          description: 'Alarms for your upcoming classes.',
+          description:
+              'Notifications for your upcoming classes.',
           importance: Importance.max,
         ),
       );
@@ -117,10 +109,6 @@ class NotificationService {
       name: 'NotificationService',
     );
   }
-
-  // ============================================================
-  // PERMISSIONS
-  // ============================================================
 
   Future<bool> requestPermissions() async {
     bool granted = true;
@@ -137,16 +125,17 @@ class NotificationService {
 
       granted = ok ?? false;
     } else if (Platform.isAndroid) {
-      final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+      final AndroidFlutterLocalNotificationsPlugin?
+          androidPlugin =
           _plugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
 
       final bool? notificationPermission =
-          await androidPlugin?.requestNotificationsPermission();
+          await androidPlugin
+              ?.requestNotificationsPermission();
 
       granted = notificationPermission ?? false;
 
-      // Exact alarm permission.
       final PermissionStatus exactAlarmStatus =
           await Permission.scheduleExactAlarm.status;
 
@@ -167,7 +156,8 @@ class NotificationService {
     await _ensureReady();
 
     if (Platform.isAndroid) {
-      final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+      final AndroidFlutterLocalNotificationsPlugin?
+          androidPlugin =
           _plugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
 
@@ -178,10 +168,11 @@ class NotificationService {
     }
 
     if (Platform.isIOS) {
-      final NotificationsEnabledOptions? opts = await _plugin
-          .resolvePlatformSpecificImplementation<
-              IOSFlutterLocalNotificationsPlugin>()
-          ?.checkPermissions();
+      final NotificationsEnabledOptions? opts =
+          await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.checkPermissions();
 
       return opts?.isEnabled ?? false;
     }
@@ -189,19 +180,16 @@ class NotificationService {
     return true;
   }
 
-  // ============================================================
-  // TEST NOTIFICATION
-  // ============================================================
-
   Future<void> showTestNotification() async {
     await _ensureReady();
 
-    // Make sure notification permission has been requested.
     if (Platform.isAndroid) {
-      final bool enabled = await hasPermission();
+      final bool enabled =
+          await hasPermission();
 
       if (!enabled) {
-        final bool granted = await requestPermissions();
+        final bool granted =
+            await requestPermissions();
 
         if (!granted) {
           throw Exception(
@@ -232,37 +220,21 @@ class NotificationService {
     );
   }
 
-  // ============================================================
-  // TASK REMINDERS
-  // ============================================================
-
-  Future<void> scheduleTaskReminder(Task task) async {
+  Future<void> scheduleTaskReminder(
+    Task task,
+  ) async {
     await _ensureReady();
 
     await cancelTaskReminder(task);
 
-    final DateTime? reminderTime = task.reminderTime;
-
-    dev.log(
-      'Scheduling task reminder | '
-      'id=${task.id} '
-      'notifId=${task.notificationId} '
-      'now=${DateTime.now()} '
-      'reminderTime=$reminderTime '
-      'enabled=${task.reminderEnabled} '
-      'completed=${task.isCompleted}',
-      name: 'NotificationService',
-    );
+    final DateTime? reminderTime =
+        task.reminderTime;
 
     if (task.isCompleted) return;
     if (!task.reminderEnabled) return;
     if (reminderTime == null) return;
 
     if (reminderTime.isBefore(DateTime.now())) {
-      dev.log(
-        'Reminder time is in the past — not scheduling.',
-        name: 'NotificationService',
-      );
       return;
     }
 
@@ -287,17 +259,11 @@ class NotificationService {
         androidScheduleMode:
             AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
+            UILocalNotificationDateInterpretation
+                .absoluteTime,
         payload: 'task:${task.id}',
       );
-
-      dev.log(
-        'Task reminder scheduled successfully.',
-        name: 'NotificationService',
-      );
     } catch (e, st) {
-      // IMPORTANT:
-      // Notification failure must NOT break saving the task.
       dev.log(
         'FAILED to schedule task reminder: $e',
         name: 'NotificationService',
@@ -307,11 +273,15 @@ class NotificationService {
     }
   }
 
-  Future<void> cancelTaskReminder(Task task) async {
+  Future<void> cancelTaskReminder(
+    Task task,
+  ) async {
     await _ensureReady();
 
     try {
-      await _plugin.cancel(task.notificationId);
+      await _plugin.cancel(
+        task.notificationId,
+      );
     } catch (e, st) {
       dev.log(
         'FAILED to cancel task reminder: $e',
@@ -321,29 +291,6 @@ class NotificationService {
       );
     }
   }
-
-  String _dueInText(DateTime dueAt) {
-    final Duration diff =
-        dueAt.difference(DateTime.now());
-
-    if (diff.inMinutes <= 1) {
-      return 'Due now';
-    }
-
-    if (diff.inMinutes < 60) {
-      return 'Due in ${diff.inMinutes} minutes';
-    }
-
-    if (diff.inHours < 24) {
-      return 'Due in ${diff.inHours}h';
-    }
-
-    return 'Due soon';
-  }
-
-  // ============================================================
-  // CLASS ALARMS
-  // ============================================================
 
   Future<void> scheduleClassAlarm(
     ClassModel classModel,
@@ -356,14 +303,17 @@ class NotificationService {
       return;
     }
 
-    final DateTime now = DateTime.now();
+    final DateTime now =
+        DateTime.now();
 
     final DateTime nextClassStart =
         classModel.nextOccurrenceStart(now);
 
-    final DateTime reminderTime = nextClassStart.subtract(
+    final DateTime reminderTime =
+        nextClassStart.subtract(
       Duration(
-        minutes: classModel.reminderLeadMinutes,
+        minutes:
+            classModel.reminderLeadMinutes,
       ),
     );
 
@@ -373,7 +323,8 @@ class NotificationService {
     DateTime effectiveClassStart =
         nextClassStart;
 
-    if (effectiveReminderTime.isBefore(now)) {
+    if (effectiveReminderTime
+        .isBefore(now)) {
       effectiveClassStart =
           nextClassStart.add(
         const Duration(days: 7),
@@ -382,20 +333,19 @@ class NotificationService {
       effectiveReminderTime =
           effectiveClassStart.subtract(
         Duration(
-          minutes: classModel.reminderLeadMinutes,
+          minutes:
+              classModel.reminderLeadMinutes,
         ),
       );
     }
 
     dev.log(
-      'Scheduling class alarm | '
+      'Scheduling class notification | '
       'id=${classModel.id} '
       'notifId=${classModel.notificationId} '
       'weekday=${classModel.weekday.label} '
-      'now=$now '
       'classStart=$effectiveClassStart '
-      'reminder=$effectiveReminderTime '
-      'lead=${classModel.reminderLeadMinutes}',
+      'reminder=$effectiveReminderTime',
       name: 'NotificationService',
     );
 
@@ -423,21 +373,20 @@ class NotificationService {
         androidScheduleMode:
             AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
+            UILocalNotificationDateInterpretation
+                .absoluteTime,
         matchDateTimeComponents:
             DateTimeComponents.dayOfWeekAndTime,
         payload: 'class:${classModel.id}',
       );
 
       dev.log(
-        'Class alarm scheduled successfully.',
+        'Class notification scheduled successfully.',
         name: 'NotificationService',
       );
     } catch (e, st) {
-      // IMPORTANT:
-      // Notification failure must NOT break saving the class.
       dev.log(
-        'FAILED to schedule class alarm: $e',
+        'FAILED to schedule class notification: $e',
         name: 'NotificationService',
         error: e,
         stackTrace: st,
@@ -445,15 +394,18 @@ class NotificationService {
     }
   }
 
-  String _classAlarmBody(ClassModel c) {
+  String _classAlarmBody(
+    ClassModel classModel,
+  ) {
     final String lead =
-        c.reminderLeadMinutes == 0
+        classModel.reminderLeadMinutes == 0
             ? 'Starting now'
-            : 'Starts in ${c.reminderLeadMinutes} minutes';
+            : 'Starts in '
+                '${classModel.reminderLeadMinutes} minutes';
 
     final String where =
-        c.location.isNotEmpty
-            ? ' • ${c.location}'
+        classModel.location.isNotEmpty
+            ? ' • ${classModel.location}'
             : '';
 
     return '$lead$where';
@@ -470,17 +422,13 @@ class NotificationService {
       );
     } catch (e, st) {
       dev.log(
-        'FAILED to cancel class alarm: $e',
+        'FAILED to cancel class notification: $e',
         name: 'NotificationService',
         error: e,
         stackTrace: st,
       );
     }
   }
-
-  // ============================================================
-  // RESTORE NOTIFICATIONS
-  // ============================================================
 
   Future<void> restoreAll({
     required List<Task> tasks,
@@ -492,6 +440,10 @@ class NotificationService {
       await scheduleTaskReminder(task);
     }
 
+    // IMPORTANT:
+    // Classes MUST be passed here.
+    // Passing classes: [] disables restoration
+    // of the original class notification system.
     for (final ClassModel classModel in classes) {
       await scheduleClassAlarm(classModel);
     }
@@ -504,19 +456,31 @@ class NotificationService {
     );
   }
 
-  // ============================================================
-  // DIAGNOSTICS
-  // ============================================================
-
-  Future<List<PendingNotificationRequest>> pending() async {
+  Future<List<PendingNotificationRequest>>
+      pending() async {
     await _ensureReady();
 
     return _plugin.pendingNotificationRequests();
   }
 
-  // ============================================================
-  // INTERNAL
-  // ============================================================
+  String _dueInText(DateTime dueAt) {
+    final Duration diff =
+        dueAt.difference(DateTime.now());
+
+    if (diff.inMinutes <= 1) {
+      return 'Due now';
+    }
+
+    if (diff.inMinutes < 60) {
+      return 'Due in ${diff.inMinutes} minutes';
+    }
+
+    if (diff.inHours < 24) {
+      return 'Due in ${diff.inHours}h';
+    }
+
+    return 'Due soon';
+  }
 
   Future<void> _ensureReady() async {
     if (!_initialized) {
@@ -526,18 +490,15 @@ class NotificationService {
     if (!_timezoneReady) {
       try {
         final String localName =
-            (await FlutterTimezone.getLocalTimezone()).identifier;
+            (await FlutterTimezone
+                    .getLocalTimezone())
+                .identifier;
 
         tz.setLocalLocation(
           tz.getLocation(localName),
         );
 
         _timezoneReady = true;
-
-        dev.log(
-          'Timezone retry succeeded: $localName',
-          name: 'NotificationService',
-        );
       } catch (e, st) {
         dev.log(
           'Timezone retry failed: $e',
@@ -548,10 +509,6 @@ class NotificationService {
       }
     }
   }
-
-  // ============================================================
-  // UTILITY
-  // ============================================================
 
   Weekday weekdayOf(DateTime dt) {
     return Weekday.fromDateTimeWeekday(
