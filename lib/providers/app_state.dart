@@ -20,6 +20,7 @@ class AppState extends ChangeNotifier {
   final NotificationService notifications;
   final ClassAlarmService classAlarms =
       ClassAlarmService.instance;
+
   final Uuid _uuid = const Uuid();
 
   AppState({
@@ -34,10 +35,11 @@ class AppState extends ChangeNotifier {
   List<ClassCompletion> classCompletions = [];
   List<StudySession> studySessions = [];
   List<Note> notes = [];
+
   AppSettings settings = AppSettings();
 
   // ============================================================
-  // STARTUP
+  // BOOTSTRAP
   // ============================================================
 
   Future<void> bootstrap() async {
@@ -71,18 +73,26 @@ class AppState extends ChangeNotifier {
       debugPrint('BOOT 8: load settings');
       settings = await storage.loadSettings();
 
-      debugPrint(
-        'BOOT 9: restore task notifications',
-      );
+      // ========================================================
+      // IMPORTANT:
+      // Restore the ORIGINAL notification system for BOTH
+      // tasks AND classes.
+      //
+      // This was working before ClassAlarmService was added.
+      // ========================================================
+
+      debugPrint('BOOT 9: restore task + class notifications');
 
       await notifications.restoreAll(
         tasks: tasks,
-        classes: [],
+        classes: classes,
       );
 
-      debugPrint(
-        'BOOT 9.5: restore recurring class alarms',
-      );
+      // ========================================================
+      // ALSO restore the new looping class alarms.
+      // ========================================================
+
+      debugPrint('BOOT 9.5: restore recurring class alarms');
 
       await classAlarms.restoreClasses(classes);
 
@@ -100,11 +110,11 @@ class AppState extends ChangeNotifier {
   // TASKS
   // ============================================================
 
-  Future<Task> addTask({
+  Future<void> addTask({
     required String title,
     String description = '',
-    DateTime? dueAt,
-    bool reminderEnabled = false,
+    required DateTime dueAt,
+    bool reminderEnabled = true,
     int? reminderLeadMinutes,
   }) async {
     final Task task = Task(
@@ -117,7 +127,7 @@ class AppState extends ChangeNotifier {
       reminderEnabled: reminderEnabled,
       reminderLeadMinutes:
           reminderLeadMinutes ??
-              settings.defaultReminderLeadMinutes,
+          settings.defaultReminderLeadMinutes,
     );
 
     tasks = [...tasks, task];
@@ -129,8 +139,6 @@ class AppState extends ChangeNotifier {
     );
 
     notifyListeners();
-
-    return task;
   }
 
   Future<void> updateTask(
@@ -163,17 +171,9 @@ class AppState extends ChangeNotifier {
 
     if (idx == -1) return;
 
-    final Task current = tasks[idx];
-
-    final Task updated = current.isCompleted
-        ? current.copyWith(
-            isCompleted: false,
-            clearCompletedAt: true,
-          )
-        : current.copyWith(
-            isCompleted: true,
-            completedAt: DateTime.now(),
-          );
+    final Task updated = tasks[idx].copyWith(
+      isCompleted: !tasks[idx].isCompleted,
+    );
 
     tasks = [...tasks]..[idx] = updated;
 
@@ -181,7 +181,7 @@ class AppState extends ChangeNotifier {
 
     if (updated.isCompleted) {
       unawaited(
-        _safeCancelTaskReminder(updated),
+        notifications.cancelTaskReminder(updated),
       );
     } else {
       unawaited(
@@ -195,19 +195,19 @@ class AppState extends ChangeNotifier {
   Future<void> deleteTask(String id) async {
     final Task? task = tasks
         .where((t) => t.id == id)
-        .cast<Task?>()
         .firstOrNull;
 
-    tasks =
-        tasks.where((t) => t.id != id).toList();
+    if (task == null) return;
+
+    tasks = tasks
+        .where((t) => t.id != id)
+        .toList();
 
     await storage.saveTasks(tasks);
 
-    if (task != null) {
-      unawaited(
-        _safeCancelTaskReminder(task),
-      );
-    }
+    unawaited(
+      notifications.cancelTaskReminder(task),
+    );
 
     notifyListeners();
   }
@@ -219,67 +219,73 @@ class AppState extends ChangeNotifier {
       await notifications.scheduleTaskReminder(task);
     } catch (e, st) {
       debugPrint(
-        'Task notification failed: $e',
+        'Task reminder failed: $e',
       );
       debugPrint('$st');
     }
   }
 
-  Future<void> _safeCancelTaskReminder(
-    Task task,
-  ) async {
-    try {
-      await notifications.cancelTaskReminder(task);
-    } catch (e, st) {
-      debugPrint(
-        'Task notification cancellation failed: $e',
+  // ============================================================
+  // TASK GETTERS
+  // ============================================================
+
+  List<Task> get relevantTasksToday {
+    final DateTime now = DateTime.now();
+
+    return tasks.where((task) {
+      final DateTime? dueAt = task.dueAt;
+
+      if (dueAt == null) return false;
+
+      return AppDateUtils.isSameDay(
+        dueAt,
+        now,
       );
-      debugPrint('$st');
-    }
+    }).toList();
   }
 
   List<Task> get todayTasks {
-    final DateTime now = DateTime.now();
-
-    return tasks
-        .where(
-          (t) =>
-              t.dueAt != null &&
-              AppDateUtils.isSameDay(
-                t.dueAt!,
-                now,
-              ),
-        )
-        .toList()
-      ..sort(
-        (a, b) =>
-            a.dueAt!.compareTo(b.dueAt!),
-      );
+    return relevantTasksToday;
   }
 
   List<Task> get upcomingTasks {
     final DateTime now = DateTime.now();
 
-    return tasks
-        .where(
-          (t) =>
-              !t.isCompleted &&
-              t.dueAt != null &&
-              t.dueAt!.isAfter(now),
-        )
-        .toList()
-      ..sort(
-        (a, b) =>
-            a.dueAt!.compareTo(b.dueAt!),
-      );
+    final List<Task> result = tasks.where((task) {
+      final DateTime? dueAt = task.dueAt;
+
+      if (dueAt == null) return false;
+      if (task.isCompleted) return false;
+
+      return dueAt.isAfter(now);
+    }).toList();
+
+    result.sort(
+      (a, b) =>
+          a.dueAt!.compareTo(b.dueAt!),
+    );
+
+    return result;
   }
 
   List<Task> get overdueTasks {
-    return tasks.where((t) => t.isOverdue).toList()
-      ..sort(
-        (a, b) =>
-            a.dueAt!.compareTo(b.dueAt!),
-      );
+    final DateTime now = DateTime.now();
+
+    final List<Task> result = tasks.where((task) {
+      final DateTime? dueAt = task.dueAt;
+
+      if (dueAt == null) return false;
+      if (task.isCompleted) return false;
+
+      return dueAt.isBefore(now);
+    }).toList();
+
+    result.sort(
+      (a, b) =>
+          a.dueAt!.compareTo(b.dueAt!),
+    );
+
+    return result;
   }
 
   // ============================================================
@@ -313,13 +319,19 @@ class AppState extends ChangeNotifier {
       reminderEnabled: reminderEnabled,
       reminderLeadMinutes:
           reminderLeadMinutes ??
-              settings.defaultReminderLeadMinutes,
+          settings.defaultReminderLeadMinutes,
     );
 
     classes = [...classes, classModel];
 
     await storage.saveClasses(classes);
 
+    // Original working weekly notification.
+    unawaited(
+      _safeScheduleClassNotification(classModel),
+    );
+
+    // New nonstop looping alarm.
     unawaited(
       _safeScheduleClassAlarm(classModel),
     );
@@ -348,7 +360,7 @@ class AppState extends ChangeNotifier {
     await storage.saveClasses(classes);
 
     unawaited(
-      _replaceClassAlarm(
+      _replaceClassReminders(
         oldClass,
         updated,
       ),
@@ -357,16 +369,31 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _replaceClassAlarm(
+  Future<void> _replaceClassReminders(
     ClassModel oldClass,
     ClassModel updatedClass,
   ) async {
     try {
-      await classAlarms.cancel(oldClass);
-      await classAlarms.schedule(updatedClass);
+      // Cancel BOTH systems for the old class.
+      await notifications.cancelClassAlarm(
+        oldClass,
+      );
+
+      await classAlarms.cancel(
+        oldClass,
+      );
+
+      // Schedule BOTH systems for the updated class.
+      await notifications.scheduleClassAlarm(
+        updatedClass,
+      );
+
+      await classAlarms.schedule(
+        updatedClass,
+      );
     } catch (e, st) {
       debugPrint(
-        'Class alarm replacement failed: $e',
+        'Class reminder replacement failed: $e',
       );
       debugPrint('$st');
     }
@@ -375,28 +402,45 @@ class AppState extends ChangeNotifier {
   Future<void> deleteClass(String id) async {
     final ClassModel? classModel = classes
         .where((c) => c.id == id)
-        .cast<ClassModel?>()
         .firstOrNull;
 
-    classes =
-        classes.where((c) => c.id != id).toList();
+    if (classModel == null) return;
+
+    classes = classes
+        .where((c) => c.id != id)
+        .toList();
 
     await storage.saveClasses(classes);
 
-    if (classModel != null) {
-      unawaited(
-        _safeCancelClassAlarm(classModel),
-      );
-    }
+    unawaited(
+      _safeCancelClassReminders(classModel),
+    );
 
     notifyListeners();
+  }
+
+  Future<void> _safeScheduleClassNotification(
+    ClassModel classModel,
+  ) async {
+    try {
+      await notifications.scheduleClassAlarm(
+        classModel,
+      );
+    } catch (e, st) {
+      debugPrint(
+        'Class notification failed: $e',
+      );
+      debugPrint('$st');
+    }
   }
 
   Future<void> _safeScheduleClassAlarm(
     ClassModel classModel,
   ) async {
     try {
-      await classAlarms.schedule(classModel);
+      await classAlarms.schedule(
+        classModel,
+      );
     } catch (e, st) {
       debugPrint(
         'Class alarm failed: $e',
@@ -405,39 +449,53 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _safeCancelClassAlarm(
+  Future<void> _safeCancelClassReminders(
     ClassModel classModel,
   ) async {
     try {
-      await classAlarms.cancel(classModel);
+      // Cancel the original notification.
+      await notifications.cancelClassAlarm(
+        classModel,
+      );
+
+      // Cancel the looping alarm occurrences.
+      await classAlarms.cancel(
+        classModel,
+      );
     } catch (e, st) {
       debugPrint(
-        'Class alarm cancellation failed: $e',
+        'Class reminder cancellation failed: $e',
       );
       debugPrint('$st');
     }
   }
 
+  // ============================================================
+  // CLASS GETTERS
+  // ============================================================
+
   List<ClassModel> classesFor(
     Weekday weekday,
   ) {
-    return classes
+    final List<ClassModel> result = classes
         .where((c) => c.weekday == weekday)
-        .toList()
-      ..sort(
-        (a, b) =>
-            a.startMinutes.compareTo(
-          b.startMinutes,
-        ),
-      );
+        .toList();
+
+    result.sort(
+      (a, b) =>
+          a.startMinutes.compareTo(b.startMinutes),
+    );
+
+    return result;
   }
 
   List<ClassModel> get todayClasses {
-    return classesFor(
-      Weekday.fromDateTimeWeekday(
-        DateTime.now().weekday,
-      ),
+    final Weekday today =
+        Weekday.fromDateTimeWeekday(
+      DateTime.now().weekday,
     );
+
+    return classesFor(today);
   }
 
   ClassModel? get nextUpcomingClass {
@@ -445,75 +503,76 @@ class AppState extends ChangeNotifier {
 
     final DateTime now = DateTime.now();
 
-    ClassModel? best;
-    DateTime? bestTime;
+    ClassModel? result;
+    DateTime? resultTime;
 
-    for (final ClassModel c in classes) {
+    for (final ClassModel classModel in classes) {
       final DateTime occurrence =
-          c.nextOccurrenceStart(now);
+          classModel.nextOccurrenceStart(now);
 
-      if (bestTime == null ||
-          occurrence.isBefore(bestTime)) {
-        best = c;
-        bestTime = occurrence;
+      if (resultTime == null ||
+          occurrence.isBefore(resultTime)) {
+        result = classModel;
+        resultTime = occurrence;
       }
     }
 
-    return best;
+    return result;
   }
+
+  // ============================================================
+  // CLASS COMPLETIONS
+  // ============================================================
 
   bool isClassOccurrenceCompleted(
     String classId,
-    DateTime date,
+    DateTime occurrenceDate,
   ) {
-    final String key =
-        '$classId::${AppDateUtils.dateKey(
-          AppDateUtils.dateOnly(date),
-        )}';
-
     return classCompletions.any(
-      (c) => c.key == key && c.completed,
+      (completion) =>
+          completion.classId == classId &&
+          AppDateUtils.isSameDay(
+            completion.date,
+            occurrenceDate,
+          ),
     );
   }
 
   Future<void> toggleClassOccurrenceCompleted(
     String classId,
-    DateTime date,
+    DateTime occurrenceDate,
   ) async {
-    final DateTime day =
-        AppDateUtils.dateOnly(date);
-
-    final String key =
-        '$classId::${AppDateUtils.dateKey(day)}';
-
-    final int idx =
-        classCompletions.indexWhere(
-      (c) => c.key == key,
+    final bool alreadyCompleted =
+        isClassOccurrenceCompleted(
+      classId,
+      occurrenceDate,
     );
 
-    if (idx == -1) {
+    if (alreadyCompleted) {
+      classCompletions = classCompletions
+          .where(
+            (completion) =>
+                !(
+                  completion.classId == classId &&
+                  AppDateUtils.isSameDay(
+                    completion.date,
+                    occurrenceDate,
+                  )
+                ),
+          )
+          .toList();
+    } else {
       classCompletions = [
         ...classCompletions,
         ClassCompletion(
           classId: classId,
-          date: day,
-          completed: true,
+          date: DateTime(
+            occurrenceDate.year,
+            occurrenceDate.month,
+            occurrenceDate.day,
+          ),
         ),
       ];
-    } else {
-      final ClassCompletion existing =
-          classCompletions[idx];
-
-      existing.completed =
-          !existing.completed;
-
-      existing.completedAt =
-          existing.completed
-              ? DateTime.now()
-              : null;
-
-      classCompletions =
-          [...classCompletions];
     }
 
     await storage.saveClassCompletions(
@@ -527,43 +586,24 @@ class AppState extends ChangeNotifier {
   // STUDY SESSIONS
   // ============================================================
 
-  Future<StudySession> addStudySession({
-    required String subject,
-    required DateTime startTime,
-    required DateTime endTime,
-    String notes = '',
+  Future<void> addStudySession({
+    required DateTime startedAt,
+    required DateTime endedAt,
+    String subject = '',
+    String note = '',
   }) async {
     final StudySession session = StudySession(
       id: _uuid.v4(),
-      subject: subject.trim().isEmpty
-          ? 'Study session'
-          : subject.trim(),
-      startTime: startTime,
-      endTime: endTime,
-      notes: notes,
+      startedAt: startedAt,
+      endedAt: endedAt,
+      subject: subject,
+      note: note,
     );
 
     studySessions = [
       ...studySessions,
       session,
     ];
-
-    await storage.saveStudySessions(
-      studySessions,
-    );
-
-    notifyListeners();
-
-    return session;
-  }
-
-  Future<void> deleteStudySession(
-    String id,
-  ) async {
-    studySessions =
-        studySessions.where(
-      (s) => s.id != id,
-    ).toList();
 
     await storage.saveStudySessions(
       studySessions,
@@ -577,30 +617,36 @@ class AppState extends ChangeNotifier {
 
     return studySessions
         .where(
-          (s) => AppDateUtils.isSameDay(
-            s.startTime,
+          (session) =>
+              AppDateUtils.isSameDay(
+            session.startedAt,
             now,
           ),
         )
-        .fold(
+        .fold<Duration>(
           Duration.zero,
-          (sum, s) => sum + s.duration,
+          (total, session) =>
+              total + session.duration,
         );
   }
 
   Duration get studyTimeThisWeek {
-    final DateTime now = DateTime.now();
+    final DateTime weekStart =
+        AppDateUtils.startOfWeek(
+      DateTime.now(),
+    );
 
     return studySessions
         .where(
-          (s) => AppDateUtils.isInWeekOf(
-            s.startTime,
-            now,
+          (session) =>
+              !session.startedAt.isBefore(
+            weekStart,
           ),
         )
-        .fold(
+        .fold<Duration>(
           Duration.zero,
-          (sum, s) => sum + s.duration,
+          (total, session) =>
+              total + session.duration,
         );
   }
 
@@ -608,9 +654,9 @@ class AppState extends ChangeNotifier {
   // NOTES
   // ============================================================
 
-  Future<Note> addNote({
+  Future<void> addNote({
     required String title,
-    String content = '',
+    required String content,
   }) async {
     final Note note = Note(
       id: _uuid.v4(),
@@ -620,13 +666,11 @@ class AppState extends ChangeNotifier {
       content: content,
     );
 
-    notes = [note, ...notes];
+    notes = [...notes, note];
 
     await storage.saveNotes(notes);
 
     notifyListeners();
-
-    return note;
   }
 
   Future<void> updateNote(
@@ -640,8 +684,6 @@ class AppState extends ChangeNotifier {
 
     final Note updated = update(notes[idx]);
 
-    updated.updatedAt = DateTime.now();
-
     notes = [...notes]..[idx] = updated;
 
     await storage.saveNotes(notes);
@@ -650,38 +692,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String id) async {
-    notes =
-        notes.where((n) => n.id != id).toList();
+    notes = notes
+        .where((n) => n.id != id)
+        .toList();
 
     await storage.saveNotes(notes);
-
-    notifyListeners();
-  }
-
-  // ============================================================
-  // DATA MANAGEMENT
-  // ============================================================
-
-  Future<void> clearAllData() async {
-    for (final Task t in tasks) {
-      unawaited(
-        _safeCancelTaskReminder(t),
-      );
-    }
-
-    for (final ClassModel c in classes) {
-      unawaited(
-        _safeCancelClassAlarm(c),
-      );
-    }
-
-    await storage.clearAllData();
-
-    tasks = [];
-    classes = [];
-    classCompletions = [];
-    studySessions = [];
-    notes = [];
 
     notifyListeners();
   }
@@ -704,124 +719,169 @@ class AppState extends ChangeNotifier {
   // PROGRESS
   // ============================================================
 
-  List<Task> get relevantTasksToday {
-    final DateTime now = DateTime.now();
+  WeeklyTaskProgress get weeklyTaskProgress {
+    final DateTime weekStart =
+        AppDateUtils.startOfWeek(
+      DateTime.now(),
+    );
 
-    return tasks
-        .where(
-          (t) =>
-              (t.dueAt != null &&
-                  AppDateUtils.isSameDay(
-                    t.dueAt!,
-                    now,
-                  )) ||
-              t.isOverdue,
-        )
-        .toList();
-  }
-
-  double get todayTaskProgress {
-    final List<Task> relevant =
-        relevantTasksToday;
-
-    if (relevant.isEmpty) return 0;
-
-    final int done =
-        relevant.where(
-      (t) => t.isCompleted,
-    ).length;
-
-    return done / relevant.length;
-  }
-
-  ({
-    int tasksDone,
-    int tasksTotal,
-  }) get weeklyTaskProgress {
-    final DateTime now = DateTime.now();
+    final DateTime weekEnd =
+        weekStart.add(
+      const Duration(days: 7),
+    );
 
     final List<Task> weekTasks =
-        tasks.where(
-      (t) =>
-          t.dueAt != null &&
-          AppDateUtils.isInWeekOf(
-            t.dueAt!,
-            now,
-          ),
-    ).toList();
+        tasks.where((task) {
+      final DateTime? dueAt = task.dueAt;
 
-    return (
+      if (dueAt == null) return false;
+
+      return !dueAt.isBefore(weekStart) &&
+          dueAt.isBefore(weekEnd);
+    }).toList();
+
+    return WeeklyTaskProgress(
       tasksDone: weekTasks
-          .where((t) => t.isCompleted)
+          .where((task) => task.isCompleted)
           .length,
       tasksTotal: weekTasks.length,
     );
   }
 
-  ({
-    int classesDone,
-    int classesTotal,
-  }) get weeklyClassProgress {
-    final DateTime now = DateTime.now();
-
+  WeeklyClassProgress get weeklyClassProgress {
     final DateTime weekStart =
-        AppDateUtils.startOfWeek(now);
+        AppDateUtils.startOfWeek(
+      DateTime.now(),
+    );
 
     int total = 0;
     int done = 0;
 
-    for (final ClassModel c in classes) {
-      final DateTime occurrenceThisWeek =
-          weekStart.add(
-        Duration(days: c.weekday.index),
+    for (final ClassModel classModel in classes) {
+      final DateTime occurrence =
+          _occurrenceForWeek(
+        classModel,
+        weekStart,
       );
 
-      final DateTime occurrenceDateTime =
-          DateTime(
-        occurrenceThisWeek.year,
-        occurrenceThisWeek.month,
-        occurrenceThisWeek.day,
-        c.startHour,
-        c.startMinute,
-      );
-
-      if (occurrenceDateTime.isAfter(now)) {
-        continue;
-      }
-
-      total += 1;
+      total++;
 
       if (isClassOccurrenceCompleted(
-        c.id,
-        occurrenceThisWeek,
+        classModel.id,
+        occurrence,
       )) {
-        done += 1;
+        done++;
       }
     }
 
-    return (
+    return WeeklyClassProgress(
       classesDone: done,
       classesTotal: total,
     );
   }
 
+  DateTime _occurrenceForWeek(
+    ClassModel classModel,
+    DateTime weekStart,
+  ) {
+    return weekStart.add(
+      Duration(
+        days: classModel.weekday.index,
+        minutes: classModel.startMinutes,
+      ),
+    );
+  }
+
+  // ============================================================
+  // MOTIVATION
+  // ============================================================
+
   String get motivationalMessage {
-    final List<String> messages = [
-      'Small steps still count ✨',
-      'One thing at a time.',
-      "You've got this.",
-      'Future you will thank you.',
-      'Keep going — you\'re doing great.',
-      'Nice and steady wins the day',
-    ];
+    final int done =
+        relevantTasksToday
+            .where((t) => t.isCompleted)
+            .length;
 
-    final int dayIndex =
-        DateTime.now().day %
-            messages.length;
+    final int total =
+        relevantTasksToday.length;
 
-    return messages[dayIndex];
+    if (total == 0) {
+      return 'Nothing due today. Enjoy the breathing room 🎉';
+    }
+
+    if (done == 0) {
+      return 'Start small. You’ve got this.';
+    }
+
+    if (done >= total) {
+      return 'Everything due today is done. Amazing work! 🎉';
+    }
+
+    if (done >= total / 2) {
+      return 'You’re more than halfway there. Keep going!';
+    }
+
+    return 'Nice and steady wins the day.';
+  }
+
+  // ============================================================
+  // CLEAR ALL DATA
+  // ============================================================
+
+  Future<void> clearAllData() async {
+    for (final Task task in tasks) {
+      await notifications.cancelTaskReminder(task);
+    }
+
+    for (final ClassModel classModel in classes) {
+      await notifications.cancelClassAlarm(
+        classModel,
+      );
+
+      await classAlarms.cancel(
+        classModel,
+      );
+    }
+
+    tasks = [];
+    classes = [];
+    classCompletions = [];
+    studySessions = [];
+    notes = [];
+
+    await storage.clearAllData();
+
+    notifyListeners();
   }
 }
+
+// ================================================================
+// PROGRESS MODELS
+// ================================================================
+
+class WeeklyTaskProgress {
+  final int tasksDone;
+  final int tasksTotal;
+
+  const WeeklyTaskProgress({
+    required this.tasksDone,
+    required this.tasksTotal,
+  });
+}
+
+class WeeklyClassProgress {
+  final int classesDone;
+  final int classesTotal;
+
+  const WeeklyClassProgress({
+    required this.classesDone,
+    required this.classesTotal,
+  });
+}
+
+// ================================================================
+// firstOrNull
+// ================================================================
 
 extension _FirstOrNull<T> on Iterable<T> {
   T? get firstOrNull =>
