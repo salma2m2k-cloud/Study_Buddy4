@@ -10,6 +10,9 @@ class ClassAlarmService {
 
   bool _initialized = false;
 
+  // Schedule 52 future weekly occurrences.
+  static const int _weeksToSchedule = 52;
+
   Future<void> init() async {
     if (_initialized) return;
 
@@ -18,87 +21,70 @@ class ClassAlarmService {
     _initialized = true;
   }
 
-  // ============================================================
-  // SCHEDULE NEXT WEEKLY OCCURRENCE
-  // ============================================================
-
   Future<void> schedule(
     ClassModel classModel,
   ) async {
     await init();
 
+    // Remove any old alarms for this class first.
+    await cancel(classModel);
+
     final DateTime now = DateTime.now();
 
-    final DateTime nextClassStart =
+    DateTime occurrence =
         classModel.nextOccurrenceStart(now);
 
-    DateTime alarmTime =
-        nextClassStart.subtract(
-      Duration(
-        minutes: classModel.reminderLeadMinutes,
-      ),
-    );
+    for (int week = 0;
+        week < _weeksToSchedule;
+        week++) {
+      final DateTime alarmTime =
+          occurrence.subtract(
+        Duration(
+          minutes: classModel.reminderLeadMinutes,
+        ),
+      );
 
-    // If this week's reminder has already passed,
-    // move to the next week's occurrence.
-    while (!alarmTime.isAfter(now)) {
-      alarmTime = alarmTime.add(
+      if (alarmTime.isAfter(now)) {
+        final int alarmId =
+            _occurrenceAlarmId(
+          classModel.notificationId,
+          occurrence,
+        );
+
+        final AlarmSettings settings =
+            AlarmSettings(
+          id: alarmId,
+          dateTime: alarmTime,
+          assetAudioPath:
+              'assets/sounds/class_alarm.mp3',
+          loopAudio: true,
+          vibrate: true,
+          volumeSettings:
+              const VolumeSettings.fixed(
+            volume: 1.0,
+            volumeEnforced: true,
+          ),
+          notificationSettings:
+              NotificationSettings(
+            title: '🔔 ${classModel.name}',
+            body: _body(classModel),
+            stopButton: 'STOP',
+          ),
+          androidFullScreenIntent: true,
+          androidStopAlarmOnTermination: false,
+          warningNotificationOnKill: true,
+        );
+
+        await Alarm.set(
+          alarmSettings: settings,
+        );
+      }
+
+      occurrence = occurrence.add(
         const Duration(days: 7),
       );
     }
-
-    final int alarmId =
-        classModel.notificationId;
-
-    // Replace any existing alarm for this class.
-    await Alarm.stop(alarmId);
-
-    final AlarmSettings settings =
-        AlarmSettings(
-      id: alarmId,
-      dateTime: alarmTime,
-
-      // Bundled with the APK.
-      assetAudioPath:
-          'assets/sounds/class_alarm.mp3',
-
-      // 🔊 Repeat indefinitely until STOP.
-      loopAudio: true,
-
-      // 📳 Repeat vibration until STOP.
-      vibrate: true,
-
-      // Full alarm volume.
-      volumeSettings:
-          const VolumeSettings.fixed(
-        volume: 1.0,
-        volumeEnforced: true,
-      ),
-
-      notificationSettings:
-          NotificationSettings(
-        title: '🔔 ${classModel.name}',
-        body: _body(classModel),
-        stopButton: 'STOP',
-      ),
-
-      androidFullScreenIntent: true,
-
-      // Keep the alarm alive if the Flutter
-      // application process is terminated.
-      androidStopAlarmOnTermination: false,
-
-      warningNotificationOnKill: true,
-    );
-
-    await Alarm.set(
-      alarmSettings: settings,
-    );
   }
-
-  // ============================================================
-  // RESTORE ALL RECURRING CLASSES
-  // ============================================================
 
   Future<void> restoreClasses(
     List<ClassModel> classes,
@@ -109,30 +95,55 @@ class ClassAlarmService {
       try {
         await schedule(classModel);
       } catch (_) {
-        // One broken alarm must not prevent
+        // Do not let one failed class stop
         // the remaining classes from being restored.
       }
     }
   }
-
-  // ============================================================
-  // CANCEL
-  // ============================================================
 
   Future<void> cancel(
     ClassModel classModel,
   ) async {
     await init();
 
-    await Alarm.stop(
-      classModel.notificationId,
-    );
+    final DateTime now = DateTime.now();
+
+    DateTime occurrence =
+        classModel.nextOccurrenceStart(now);
+
+    for (int week = 0;
+        week < _weeksToSchedule;
+        week++) {
+      final int alarmId =
+          _occurrenceAlarmId(
+        classModel.notificationId,
+        occurrence,
+      );
+
+      try {
+        await Alarm.stop(alarmId);
+      } catch (_) {
+        // Ignore alarms that do not exist.
+      }
+
+      occurrence = occurrence.add(
+        const Duration(days: 7),
+      );
+    }
   }
 
   Future<void> cancelById(int id) async {
     await init();
 
-    await Alarm.stop(id);
+    // Kept for compatibility.
+    //
+    // AppState normally uses cancel(ClassModel), because
+    // the class date is needed to calculate occurrence IDs.
+    try {
+      await Alarm.stop(id);
+    } catch (_) {
+      // Ignore missing alarms.
+    }
   }
 
   Future<void> stopAll() async {
@@ -141,9 +152,22 @@ class ClassAlarmService {
     await Alarm.stopAll();
   }
 
-  // ============================================================
-  // NOTIFICATION BODY
-  // ============================================================
+  int _occurrenceAlarmId(
+    int baseId,
+    DateTime occurrence,
+  ) {
+    final int datePart =
+        occurrence.year * 10000 +
+        occurrence.month * 100 +
+        occurrence.day;
+
+    // Keep the ID positive and inside Android's int range.
+    final int value =
+        ((baseId.abs() % 100000) * 100000) +
+        (datePart % 100000);
+
+    return value == 0 ? 1 : value;
+  }
 
   String _body(
     ClassModel classModel,
