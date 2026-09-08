@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -17,7 +19,10 @@ class AppState extends ChangeNotifier {
   final NotificationService notifications;
   final Uuid _uuid = const Uuid();
 
-  AppState({required this.storage, required this.notifications});
+  AppState({
+    required this.storage,
+    required this.notifications,
+  });
 
   bool isLoading = true;
 
@@ -28,7 +33,10 @@ class AppState extends ChangeNotifier {
   List<Note> notes = [];
   AppSettings settings = AppSettings();
 
-  /// Runs once at app startup.
+  // ============================================================
+  // STARTUP
+  // ============================================================
+
   Future<void> bootstrap() async {
     try {
       debugPrint('BOOT 1: storage.init');
@@ -44,10 +52,12 @@ class AppState extends ChangeNotifier {
       classes = await storage.loadClasses();
 
       debugPrint('BOOT 5: load completions');
-      classCompletions = await storage.loadClassCompletions();
+      classCompletions =
+          await storage.loadClassCompletions();
 
       debugPrint('BOOT 6: load study sessions');
-      studySessions = await storage.loadStudySessions();
+      studySessions =
+          await storage.loadStudySessions();
 
       debugPrint('BOOT 7: load notes');
       notes = await storage.loadNotes();
@@ -71,7 +81,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ==================== TASKS ====================
+  // ============================================================
+  // TASKS
+  // ============================================================
 
   Future<Task> addTask({
     required String title,
@@ -82,18 +94,27 @@ class AppState extends ChangeNotifier {
   }) async {
     final Task task = Task(
       id: _uuid.v4(),
-      title: title.trim().isEmpty ? 'Untitled task' : title.trim(),
+      title: title.trim().isEmpty
+          ? 'Untitled task'
+          : title.trim(),
       description: description,
       dueAt: dueAt,
       reminderEnabled: reminderEnabled,
       reminderLeadMinutes:
-          reminderLeadMinutes ?? settings.defaultReminderLeadMinutes,
+          reminderLeadMinutes ??
+              settings.defaultReminderLeadMinutes,
     );
 
+    // Save the actual task first.
     tasks = [...tasks, task];
 
     await storage.saveTasks(tasks);
-    await notifications.scheduleTaskReminder(task);
+
+    // Saving is complete. Notification work must never
+    // prevent the form from closing.
+    unawaited(
+      _safeScheduleTaskReminder(task),
+    );
 
     notifyListeners();
 
@@ -104,7 +125,8 @@ class AppState extends ChangeNotifier {
     String id,
     Task Function(Task) update,
   ) async {
-    final int idx = tasks.indexWhere((t) => t.id == id);
+    final int idx =
+        tasks.indexWhere((t) => t.id == id);
 
     if (idx == -1) return;
 
@@ -114,13 +136,20 @@ class AppState extends ChangeNotifier {
 
     await storage.saveTasks(tasks);
 
-    await notifications.scheduleTaskReminder(updated);
+    // Schedule separately so notification problems cannot
+    // make the save operation appear to fail.
+    unawaited(
+      _safeScheduleTaskReminder(updated),
+    );
 
     notifyListeners();
   }
 
-  Future<void> toggleTaskCompleted(String id) async {
-    final int idx = tasks.indexWhere((t) => t.id == id);
+  Future<void> toggleTaskCompleted(
+    String id,
+  ) async {
+    final int idx =
+        tasks.indexWhere((t) => t.id == id);
 
     if (idx == -1) return;
 
@@ -141,9 +170,13 @@ class AppState extends ChangeNotifier {
     await storage.saveTasks(tasks);
 
     if (updated.isCompleted) {
-      await notifications.cancelTaskReminder(updated);
+      unawaited(
+        _safeCancelTaskReminder(updated),
+      );
     } else {
-      await notifications.scheduleTaskReminder(updated);
+      unawaited(
+        _safeScheduleTaskReminder(updated),
+      );
     }
 
     notifyListeners();
@@ -155,15 +188,44 @@ class AppState extends ChangeNotifier {
         .cast<Task?>()
         .firstOrNull;
 
-    tasks = tasks.where((t) => t.id != id).toList();
+    tasks =
+        tasks.where((t) => t.id != id).toList();
 
     await storage.saveTasks(tasks);
 
     if (task != null) {
-      await notifications.cancelTaskReminder(task);
+      unawaited(
+        _safeCancelTaskReminder(task),
+      );
     }
 
     notifyListeners();
+  }
+
+  Future<void> _safeScheduleTaskReminder(
+    Task task,
+  ) async {
+    try {
+      await notifications.scheduleTaskReminder(task);
+    } catch (e, st) {
+      debugPrint(
+        'Task notification failed: $e',
+      );
+      debugPrint('$st');
+    }
+  }
+
+  Future<void> _safeCancelTaskReminder(
+    Task task,
+  ) async {
+    try {
+      await notifications.cancelTaskReminder(task);
+    } catch (e, st) {
+      debugPrint(
+        'Task notification cancellation failed: $e',
+      );
+      debugPrint('$st');
+    }
   }
 
   List<Task> get todayTasks {
@@ -173,10 +235,16 @@ class AppState extends ChangeNotifier {
         .where(
           (t) =>
               t.dueAt != null &&
-              AppDateUtils.isSameDay(t.dueAt!, now),
+              AppDateUtils.isSameDay(
+                t.dueAt!,
+                now,
+              ),
         )
         .toList()
-      ..sort((a, b) => a.dueAt!.compareTo(b.dueAt!));
+      ..sort(
+        (a, b) =>
+            a.dueAt!.compareTo(b.dueAt!),
+      );
   }
 
   List<Task> get upcomingTasks {
@@ -190,15 +258,23 @@ class AppState extends ChangeNotifier {
               t.dueAt!.isAfter(now),
         )
         .toList()
-      ..sort((a, b) => a.dueAt!.compareTo(b.dueAt!));
+      ..sort(
+        (a, b) =>
+            a.dueAt!.compareTo(b.dueAt!),
+      );
   }
 
   List<Task> get overdueTasks {
     return tasks.where((t) => t.isOverdue).toList()
-      ..sort((a, b) => a.dueAt!.compareTo(b.dueAt!));
+      ..sort(
+        (a, b) =>
+            a.dueAt!.compareTo(b.dueAt!),
+      );
   }
 
-  // ==================== CLASSES ====================
+  // ============================================================
+  // CLASSES
+  // ============================================================
 
   Future<ClassModel> addClass({
     required String name,
@@ -214,7 +290,9 @@ class AppState extends ChangeNotifier {
   }) async {
     final ClassModel classModel = ClassModel(
       id: _uuid.v4(),
-      name: name.trim().isEmpty ? 'Untitled class' : name.trim(),
+      name: name.trim().isEmpty
+          ? 'Untitled class'
+          : name.trim(),
       subject: subject,
       teacher: teacher,
       weekday: weekday,
@@ -224,13 +302,19 @@ class AppState extends ChangeNotifier {
       notes: notes,
       reminderEnabled: reminderEnabled,
       reminderLeadMinutes:
-          reminderLeadMinutes ?? settings.defaultReminderLeadMinutes,
+          reminderLeadMinutes ??
+              settings.defaultReminderLeadMinutes,
     );
 
+    // Save the class first.
     classes = [...classes, classModel];
 
     await storage.saveClasses(classes);
-    await notifications.scheduleClassAlarm(classModel);
+
+    // Notification work is separate from the save.
+    unawaited(
+      _safeScheduleClassAlarm(classModel),
+    );
 
     notifyListeners();
 
@@ -241,17 +325,21 @@ class AppState extends ChangeNotifier {
     String id,
     ClassModel Function(ClassModel) update,
   ) async {
-    final int idx = classes.indexWhere((c) => c.id == id);
+    final int idx =
+        classes.indexWhere((c) => c.id == id);
 
     if (idx == -1) return;
 
-    final ClassModel updated = update(classes[idx]);
+    final ClassModel updated =
+        update(classes[idx]);
 
     classes = [...classes]..[idx] = updated;
 
     await storage.saveClasses(classes);
 
-    await notifications.scheduleClassAlarm(updated);
+    unawaited(
+      _safeScheduleClassAlarm(updated),
+    );
 
     notifyListeners();
   }
@@ -262,25 +350,69 @@ class AppState extends ChangeNotifier {
         .cast<ClassModel?>()
         .firstOrNull;
 
-    classes = classes.where((c) => c.id != id).toList();
+    classes =
+        classes.where((c) => c.id != id).toList();
 
     await storage.saveClasses(classes);
 
     if (classModel != null) {
-      await notifications.cancelClassAlarm(classModel);
+      unawaited(
+        _safeCancelClassAlarm(classModel),
+      );
     }
 
     notifyListeners();
   }
 
-  List<ClassModel> classesFor(Weekday weekday) {
-    return classes.where((c) => c.weekday == weekday).toList()
-      ..sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
+  Future<void> _safeScheduleClassAlarm(
+    ClassModel classModel,
+  ) async {
+    try {
+      await notifications.scheduleClassAlarm(
+        classModel,
+      );
+    } catch (e, st) {
+      debugPrint(
+        'Class notification failed: $e',
+      );
+      debugPrint('$st');
+    }
+  }
+
+  Future<void> _safeCancelClassAlarm(
+    ClassModel classModel,
+  ) async {
+    try {
+      await notifications.cancelClassAlarm(
+        classModel,
+      );
+    } catch (e, st) {
+      debugPrint(
+        'Class notification cancellation failed: $e',
+      );
+      debugPrint('$st');
+    }
+  }
+
+  List<ClassModel> classesFor(
+    Weekday weekday,
+  ) {
+    return classes
+        .where((c) => c.weekday == weekday)
+        .toList()
+      ..sort(
+        (a, b) =>
+            a.startMinutes.compareTo(
+          b.startMinutes,
+        ),
+      );
   }
 
   List<ClassModel> get todayClasses {
     return classesFor(
-      Weekday.fromDateTimeWeekday(DateTime.now().weekday),
+      Weekday.fromDateTimeWeekday(
+        DateTime.now().weekday,
+      ),
     );
   }
 
@@ -293,9 +425,11 @@ class AppState extends ChangeNotifier {
     DateTime? bestTime;
 
     for (final ClassModel c in classes) {
-      final DateTime occurrence = c.nextOccurrenceStart(now);
+      final DateTime occurrence =
+          c.nextOccurrenceStart(now);
 
-      if (bestTime == null || occurrence.isBefore(bestTime)) {
+      if (bestTime == null ||
+          occurrence.isBefore(bestTime)) {
         best = c;
         bestTime = occurrence;
       }
@@ -309,7 +443,9 @@ class AppState extends ChangeNotifier {
     DateTime date,
   ) {
     final String key =
-        '$classId::${AppDateUtils.dateKey(AppDateUtils.dateOnly(date))}';
+        '$classId::${AppDateUtils.dateKey(
+          AppDateUtils.dateOnly(date),
+        )}';
 
     return classCompletions.any(
       (c) => c.key == key && c.completed,
@@ -320,13 +456,16 @@ class AppState extends ChangeNotifier {
     String classId,
     DateTime date,
   ) async {
-    final DateTime day = AppDateUtils.dateOnly(date);
+    final DateTime day =
+        AppDateUtils.dateOnly(date);
 
     final String key =
         '$classId::${AppDateUtils.dateKey(day)}';
 
     final int idx =
-        classCompletions.indexWhere((c) => c.key == key);
+        classCompletions.indexWhere(
+      (c) => c.key == key,
+    );
 
     if (idx == -1) {
       classCompletions = [
@@ -338,22 +477,31 @@ class AppState extends ChangeNotifier {
         ),
       ];
     } else {
-      final ClassCompletion existing = classCompletions[idx];
+      final ClassCompletion existing =
+          classCompletions[idx];
 
-      existing.completed = !existing.completed;
+      existing.completed =
+          !existing.completed;
 
       existing.completedAt =
-          existing.completed ? DateTime.now() : null;
+          existing.completed
+              ? DateTime.now()
+              : null;
 
-      classCompletions = [...classCompletions];
+      classCompletions =
+          [...classCompletions];
     }
 
-    await storage.saveClassCompletions(classCompletions);
+    await storage.saveClassCompletions(
+      classCompletions,
+    );
 
     notifyListeners();
   }
 
-  // ==================== STUDY SESSIONS ====================
+  // ============================================================
+  // STUDY SESSIONS
+  // ============================================================
 
   Future<StudySession> addStudySession({
     required String subject,
@@ -363,27 +511,39 @@ class AppState extends ChangeNotifier {
   }) async {
     final StudySession session = StudySession(
       id: _uuid.v4(),
-      subject:
-          subject.trim().isEmpty ? 'Study session' : subject.trim(),
+      subject: subject.trim().isEmpty
+          ? 'Study session'
+          : subject.trim(),
       startTime: startTime,
       endTime: endTime,
       notes: notes,
     );
 
-    studySessions = [...studySessions, session];
+    studySessions = [
+      ...studySessions,
+      session,
+    ];
 
-    await storage.saveStudySessions(studySessions);
+    await storage.saveStudySessions(
+      studySessions,
+    );
 
     notifyListeners();
 
     return session;
   }
 
-  Future<void> deleteStudySession(String id) async {
+  Future<void> deleteStudySession(
+    String id,
+  ) async {
     studySessions =
-        studySessions.where((s) => s.id != id).toList();
+        studySessions.where(
+      (s) => s.id != id,
+    ).toList();
 
-    await storage.saveStudySessions(studySessions);
+    await storage.saveStudySessions(
+      studySessions,
+    );
 
     notifyListeners();
   }
@@ -393,7 +553,10 @@ class AppState extends ChangeNotifier {
 
     return studySessions
         .where(
-          (s) => AppDateUtils.isSameDay(s.startTime, now),
+          (s) => AppDateUtils.isSameDay(
+            s.startTime,
+            now,
+          ),
         )
         .fold(
           Duration.zero,
@@ -406,7 +569,10 @@ class AppState extends ChangeNotifier {
 
     return studySessions
         .where(
-          (s) => AppDateUtils.isInWeekOf(s.startTime, now),
+          (s) => AppDateUtils.isInWeekOf(
+            s.startTime,
+            now,
+          ),
         )
         .fold(
           Duration.zero,
@@ -414,7 +580,9 @@ class AppState extends ChangeNotifier {
         );
   }
 
-  // ==================== NOTES ====================
+  // ============================================================
+  // NOTES
+  // ============================================================
 
   Future<Note> addNote({
     required String title,
@@ -422,8 +590,9 @@ class AppState extends ChangeNotifier {
   }) async {
     final Note note = Note(
       id: _uuid.v4(),
-      title:
-          title.trim().isEmpty ? 'Untitled note' : title.trim(),
+      title: title.trim().isEmpty
+          ? 'Untitled note'
+          : title.trim(),
       content: content,
     );
 
@@ -440,7 +609,8 @@ class AppState extends ChangeNotifier {
     String id,
     Note Function(Note) update,
   ) async {
-    final int idx = notes.indexWhere((n) => n.id == id);
+    final int idx =
+        notes.indexWhere((n) => n.id == id);
 
     if (idx == -1) return;
 
@@ -456,22 +626,29 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteNote(String id) async {
-    notes = notes.where((n) => n.id != id).toList();
+    notes =
+        notes.where((n) => n.id != id).toList();
 
     await storage.saveNotes(notes);
 
     notifyListeners();
   }
 
-  // ==================== DATA MANAGEMENT ====================
+  // ============================================================
+  // DATA MANAGEMENT
+  // ============================================================
 
   Future<void> clearAllData() async {
     for (final Task t in tasks) {
-      await notifications.cancelTaskReminder(t);
+      unawaited(
+        _safeCancelTaskReminder(t),
+      );
     }
 
     for (final ClassModel c in classes) {
-      await notifications.cancelClassAlarm(c);
+      unawaited(
+        _safeCancelClassAlarm(c),
+      );
     }
 
     await storage.clearAllData();
@@ -485,7 +662,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ==================== SETTINGS ====================
+  // ============================================================
+  // SETTINGS
+  // ============================================================
 
   Future<void> updateSettings(
     AppSettings Function(AppSettings) update,
@@ -497,7 +676,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ==================== PROGRESS ====================
+  // ============================================================
+  // PROGRESS
+  // ============================================================
 
   List<Task> get relevantTasksToday {
     final DateTime now = DateTime.now();
@@ -506,41 +687,57 @@ class AppState extends ChangeNotifier {
         .where(
           (t) =>
               (t.dueAt != null &&
-                  AppDateUtils.isSameDay(t.dueAt!, now)) ||
+                  AppDateUtils.isSameDay(
+                    t.dueAt!,
+                    now,
+                  )) ||
               t.isOverdue,
         )
         .toList();
   }
 
   double get todayTaskProgress {
-    final List<Task> relevant = relevantTasksToday;
+    final List<Task> relevant =
+        relevantTasksToday;
 
     if (relevant.isEmpty) return 0;
 
     final int done =
-        relevant.where((t) => t.isCompleted).length;
+        relevant.where(
+      (t) => t.isCompleted,
+    ).length;
 
     return done / relevant.length;
   }
 
-  ({int tasksDone, int tasksTotal}) get weeklyTaskProgress {
+  ({
+    int tasksDone,
+    int tasksTotal,
+  }) get weeklyTaskProgress {
     final DateTime now = DateTime.now();
 
-    final List<Task> weekTasks = tasks
-        .where(
-          (t) =>
-              t.dueAt != null &&
-              AppDateUtils.isInWeekOf(t.dueAt!, now),
-        )
-        .toList();
+    final List<Task> weekTasks =
+        tasks.where(
+      (t) =>
+          t.dueAt != null &&
+          AppDateUtils.isInWeekOf(
+            t.dueAt!,
+            now,
+          ),
+    ).toList();
 
     return (
-      tasksDone: weekTasks.where((t) => t.isCompleted).length,
+      tasksDone: weekTasks
+          .where((t) => t.isCompleted)
+          .length,
       tasksTotal: weekTasks.length,
     );
   }
 
-  ({int classesDone, int classesTotal}) get weeklyClassProgress {
+  ({
+    int classesDone,
+    int classesTotal,
+  }) get weeklyClassProgress {
     final DateTime now = DateTime.now();
 
     final DateTime weekStart =
@@ -551,9 +748,12 @@ class AppState extends ChangeNotifier {
 
     for (final ClassModel c in classes) {
       final DateTime occurrenceThisWeek =
-          weekStart.add(Duration(days: c.weekday.index));
+          weekStart.add(
+        Duration(days: c.weekday.index),
+      );
 
-      final DateTime occurrenceDateTime = DateTime(
+      final DateTime occurrenceDateTime =
+          DateTime(
         occurrenceThisWeek.year,
         occurrenceThisWeek.month,
         occurrenceThisWeek.day,
@@ -592,12 +792,14 @@ class AppState extends ChangeNotifier {
     ];
 
     final int dayIndex =
-        DateTime.now().day % messages.length;
+        DateTime.now().day %
+            messages.length;
 
     return messages[dayIndex];
   }
 }
 
 extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
+  T? get firstOrNull =>
+      isEmpty ? null : first;
 }
