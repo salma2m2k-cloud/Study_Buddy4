@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../providers/app_state.dart';
 
-/// Shows a polished bottom-sheet form for creating or editing a [Task].
 Future<void> showTaskForm(
   BuildContext context, {
   required AppState appState,
@@ -51,21 +50,21 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   void initState() {
     super.initState();
 
-    final Task? t = widget.existing;
+    final Task? task = widget.existing;
 
     _titleCtrl = TextEditingController(
-      text: t?.title ?? '',
+      text: task?.title ?? '',
     );
 
     _descCtrl = TextEditingController(
-      text: t?.description ?? '',
+      text: task?.description ?? '',
     );
 
-    _dueAt = t?.dueAt;
+    _dueAt = task?.dueAt;
 
-    _reminderEnabled = t?.reminderEnabled ?? false;
+    _reminderEnabled = task?.reminderEnabled ?? false;
 
-    _leadMinutes = t?.reminderLeadMinutes ??
+    _leadMinutes = task?.reminderLeadMinutes ??
         widget.appState.settings.defaultReminderLeadMinutes;
 
     if (!_leadOptions.contains(_leadMinutes)) {
@@ -89,12 +88,8 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
     final DateTime? date = await showDatePicker(
       context: context,
       initialDate: initialDate.isBefore(now) ? now : initialDate,
-      firstDate: now.subtract(
-        const Duration(days: 1),
-      ),
-      lastDate: now.add(
-        const Duration(days: 365 * 3),
-      ),
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365 * 3)),
     );
 
     if (date == null || !mounted) return;
@@ -119,7 +114,6 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
   }
 
   Future<void> _save() async {
-    // Prevent multiple taps from starting multiple save operations.
     if (_saving) return;
 
     final String title = _titleCtrl.text.trim();
@@ -133,13 +127,17 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
 
     if (_reminderEnabled && _dueAt == null) {
       setState(() {
-        _error = 'Pick a due date and time for the reminder.';
+        _error =
+            'Pick a due date and time for the reminder.';
       });
       return;
     }
 
+    final DateTime? dueAt = _dueAt;
+
     if (_reminderEnabled &&
-        _dueAt!
+        dueAt != null &&
+        dueAt
             .subtract(
               Duration(minutes: _leadMinutes),
             )
@@ -151,7 +149,6 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
       return;
     }
 
-    // Lock the button immediately so repeated taps cannot create duplicates.
     setState(() {
       _saving = true;
       _error = null;
@@ -162,34 +159,33 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
         await widget.appState.addTask(
           title: title,
           description: _descCtrl.text.trim(),
-          dueAt: _dueAt,
+          dueAt: dueAt,
           reminderEnabled: _reminderEnabled,
           reminderLeadMinutes: _leadMinutes,
         );
       } else {
         await widget.appState.updateTask(
           widget.existing!.id,
-          (t) => t.copyWith(
+          (task) => task.copyWith(
             title: title,
             description: _descCtrl.text.trim(),
-            dueAt: _dueAt,
-            clearDueAt: _dueAt == null,
+            dueAt: dueAt,
+            clearDueAt: dueAt == null,
             reminderEnabled: _reminderEnabled,
             reminderLeadMinutes: _leadMinutes,
           ),
         );
       }
 
-      // Close the sheet only after the save has completed.
       if (mounted) {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      // If saving fails, unlock the button so the user can try again.
       if (mounted) {
         setState(() {
           _saving = false;
-          _error = 'Could not save this task. Please try again.';
+          _error =
+              'Could not save this task. Please try again.';
         });
       }
     }
@@ -234,7 +230,6 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                   ),
                 ),
               ),
-
               Text(
                 isEditing ? 'Edit task' : 'New task',
                 style: Theme.of(context)
@@ -242,9 +237,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                     .headlineMedium
                     ?.copyWith(fontSize: 20),
               ),
-
               const SizedBox(height: 16),
-
               TextField(
                 controller: _titleCtrl,
                 autofocus: !isEditing,
@@ -253,9 +246,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                   hintText: 'What do you need to do?',
                 ),
               ),
-
               const SizedBox(height: 12),
-
               TextField(
                 controller: _descCtrl,
                 textCapitalization: TextCapitalization.sentences,
@@ -265,14 +256,10 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                   hintText: 'Add details (optional)',
                 ),
               ),
-
               const SizedBox(height: 12),
-
               OutlinedButton.icon(
                 onPressed: _saving ? null : _pickDateTime,
-                icon: const Icon(
-                  Icons.event_rounded,
-                ),
+                icon: const Icon(Icons.event_rounded),
                 label: Text(
                   _dueAt == null
                       ? 'Set due date & time'
@@ -281,7 +268,6 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                         ).format(_dueAt!),
                 ),
               ),
-
               if (_dueAt != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -291,36 +277,35 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                     value: _reminderEnabled,
                     onChanged: _saving
                         ? null
-                        : (v) {
+                        : (value) {
                             setState(() {
-                              _reminderEnabled = v;
+                              _reminderEnabled = value;
                             });
                           },
                   ),
                 ),
-
               if (_dueAt != null && _reminderEnabled) ...[
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
-                  children: _leadOptions.map((m) {
-                    final bool selected = m == _leadMinutes;
+                  children: _leadOptions.map((minutes) {
+                    final bool selected =
+                        minutes == _leadMinutes;
 
                     return ChoiceChip(
-                      label: Text('$m min before'),
+                      label: Text('$minutes min before'),
                       selected: selected,
                       onSelected: _saving
                           ? null
                           : (_) {
                               setState(() {
-                                _leadMinutes = m;
+                                _leadMinutes = minutes;
                               });
                             },
                     );
                   }).toList(),
                 ),
               ],
-
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -330,9 +315,7 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                   ),
                 ),
               ],
-
               const SizedBox(height: 20),
-
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -346,7 +329,9 @@ class _TaskFormSheetState extends State<_TaskFormSheet> {
                           ),
                         )
                       : Text(
-                          isEditing ? 'Save changes' : 'Add task',
+                          isEditing
+                              ? 'Save changes'
+                              : 'Add task',
                         ),
                 ),
               ),
