@@ -22,7 +22,7 @@ dependencies:
 
   # Timezone-aware scheduling
   timezone: ^0.9.4
-  flutter_timezone: ^1.0.8
+  flutter_timezone: ^5.1.0
 
   # Notification / exact alarm permissions (Android 13+ / 12+)
   permission_handler: ^11.3.1
