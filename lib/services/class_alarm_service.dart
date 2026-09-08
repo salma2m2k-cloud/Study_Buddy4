@@ -10,7 +10,9 @@ class ClassAlarmService {
 
   bool _initialized = false;
 
-  // Schedule 52 future weekly occurrences.
+  // The alarm package does not provide native weekly recurrence.
+  // We therefore schedule a rolling set of future occurrences.
+  // They are refreshed whenever the app starts.
   static const int _weeksToSchedule = 52;
 
   Future<void> init() async {
@@ -21,12 +23,16 @@ class ClassAlarmService {
     _initialized = true;
   }
 
-  Future<void> schedule(
-    ClassModel classModel,
-  ) async {
+  Future<void> schedule(ClassModel classModel) async {
     await init();
 
-    // Remove any old alarms for this class first.
+    // If reminders are disabled, make sure old alarms are removed.
+    if (!classModel.reminderEnabled) {
+      await cancel(classModel);
+      return;
+    }
+
+    // Remove previously scheduled occurrences for this class first.
     await cancel(classModel);
 
     final DateTime now = DateTime.now();
@@ -51,7 +57,7 @@ class ClassAlarmService {
           occurrence,
         );
 
-        final AlarmSettings settings =
+        final AlarmSettings alarmSettings =
             AlarmSettings(
           id: alarmId,
           dateTime: alarmTime,
@@ -75,14 +81,18 @@ class ClassAlarmService {
           warningNotificationOnKill: true,
         );
 
-        await Alarm.set(
-          alarmSettings: settings,
-        );
+        try {
+          await Alarm.set(
+            alarmSettings: alarmSettings,
+          );
+        } catch (_) {
+          // One failed occurrence must not prevent
+          // the remaining occurrences from being scheduled.
+        }
       }
 
-      occurrence = occurrence.add(
-        const Duration(days: 7),
-      );
+      occurrence =
+          occurrence.add(const Duration(days: 7));
     }
   }
 
@@ -95,8 +105,7 @@ class ClassAlarmService {
       try {
         await schedule(classModel);
       } catch (_) {
-        // Do not let one failed class stop
-        // the remaining classes from being restored.
+        // Keep restoring the other classes.
       }
     }
   }
@@ -126,30 +135,19 @@ class ClassAlarmService {
         // Ignore alarms that do not exist.
       }
 
-      occurrence = occurrence.add(
-        const Duration(days: 7),
-      );
-    }
-  }
-
-  Future<void> cancelById(int id) async {
-    await init();
-
-    // Kept for compatibility.
-    //
-    // AppState normally uses cancel(ClassModel), because
-    // the class date is needed to calculate occurrence IDs.
-    try {
-      await Alarm.stop(id);
-    } catch (_) {
-      // Ignore missing alarms.
+      occurrence =
+          occurrence.add(const Duration(days: 7));
     }
   }
 
   Future<void> stopAll() async {
     await init();
 
-    await Alarm.stopAll();
+    try {
+      await Alarm.stopAll();
+    } catch (_) {
+      // Nothing to stop.
+    }
   }
 
   int _occurrenceAlarmId(
@@ -161,7 +159,6 @@ class ClassAlarmService {
         occurrence.month * 100 +
         occurrence.day;
 
-    // Keep the ID positive and inside Android's int range.
     final int value =
         ((baseId.abs() % 100000) * 100000) +
         (datePart % 100000);
@@ -169,14 +166,12 @@ class ClassAlarmService {
     return value == 0 ? 1 : value;
   }
 
-  String _body(
-    ClassModel classModel,
-  ) {
-    if (classModel.location.isEmpty) {
+  String _body(ClassModel classModel) {
+    if (classModel.location.trim().isEmpty) {
       return 'Your class is starting soon.';
     }
 
     return 'Your class is starting soon • '
-        '${classModel.location}';
+        '${classModel.location.trim()}';
   }
 }
