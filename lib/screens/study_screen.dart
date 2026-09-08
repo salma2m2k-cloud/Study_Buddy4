@@ -13,11 +13,16 @@ class StudyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppState app = context.watch<AppState>();
+
     final sessions = [...app.studySessions]
-      ..sort((a, b) => b.startTime.compareTo(a.startTime));
+      ..sort(
+        (a, b) => b.startTime.compareTo(a.startTime),
+      );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Study')),
+      appBar: AppBar(
+        title: const Text('Study'),
+      ),
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -51,7 +56,9 @@ class StudyScreen extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const StudyTimerScreen()),
+                    MaterialPageRoute(
+                      builder: (_) => const StudyTimerScreen(),
+                    ),
                   ),
                   icon: const Icon(Icons.play_arrow_rounded),
                   label: const Text('Start studying'),
@@ -62,7 +69,10 @@ class StudyScreen extends StatelessWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-              child: Text('History', style: Theme.of(context).textTheme.titleLarge),
+              child: Text(
+                'History',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
           ),
           if (sessions.isEmpty)
@@ -74,32 +84,41 @@ class StudyScreen extends StatelessWidget {
                 message: 'Ready when you are.',
                 actionLabel: 'Start studying',
                 onAction: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const StudyTimerScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const StudyTimerScreen(),
+                  ),
                 ),
               ),
             )
           else
             SliverList.separated(
               itemCount: sessions.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: 10),
               itemBuilder: (context, i) {
-                final StudySession s = sessions[i];
+                final StudySession session = sessions[i];
+
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16),
                   child: Dismissible(
-                    key: ValueKey(s.id),
+                    key: ValueKey(session.id),
                     direction: DismissDirection.endToStart,
                     background: Container(
                       alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 24),
                       decoration: BoxDecoration(
                         color: AppTheme.accentCoral.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Icon(Icons.delete_outline_rounded,
-                          color: AppTheme.accentCoral),
+                      child: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: AppTheme.accentCoral,
+                      ),
                     ),
-                    onDismissed: (_) => app.deleteStudySession(s.id),
+                    onDismissed: (_) =>
+                        app.deleteStudySession(session.id),
                     child: Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -108,31 +127,49 @@ class StudyScreen extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppTheme.accentGreen.withOpacity(0.14),
+                                color: AppTheme.accentGreen
+                                    .withOpacity(0.14),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.menu_book_rounded,
-                                  color: AppTheme.accentGreen, size: 18),
+                              child: const Icon(
+                                Icons.menu_book_rounded,
+                                color: AppTheme.accentGreen,
+                                size: 18,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
-                                  Text(s.subject,
-                                      style: Theme.of(context).textTheme.titleMedium),
                                   Text(
-                                    '${DateFormat('EEE, MMM d · h:mm a').format(s.startTime)} · ${s.duration.compact}',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    session.subject,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium,
+                                  ),
+                                  Text(
+                                    '${DateFormat('EEE, MMM d · h:mm a').format(session.startTime)} · ${session.duration.compact}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
                                         ),
                                   ),
-                                  if (s.notes.isNotEmpty) ...[
+                                  if (session.notes.isNotEmpty) ...[
                                     const SizedBox(height: 4),
-                                    Text(s.notes,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context).textTheme.bodyMedium),
+                                    Text(
+                                      session.notes,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
                                   ],
                                 ],
                               ),
@@ -145,7 +182,9 @@ class StudyScreen extends StatelessWidget {
                 );
               },
             ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 32),
+          ),
         ],
       ),
     );
@@ -157,7 +196,11 @@ class _SummaryCard extends StatelessWidget {
   final String value;
   final Color color;
 
-  const _SummaryCard({required this.label, required this.value, required this.color});
+  const _SummaryCard({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -167,16 +210,28 @@ class _SummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value,
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium
-                    ?.copyWith(color: color, fontSize: 24)),
+            Text(
+              value,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(
+                    color: color,
+                    fontSize: 24,
+                  ),
+            ),
             const SizedBox(height: 2),
-            Text(label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant,
+                  ),
+            ),
           ],
         ),
       ),
@@ -184,9 +239,6 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-/// A simple, honest focus timer (spec #24): start, watch elapsed time
-/// tick up in real time, finish to save the session. No fake numbers —
-/// the saved duration is the real elapsed wall-clock time.
 class StudyTimerScreen extends StatefulWidget {
   const StudyTimerScreen({super.key});
 
@@ -195,8 +247,12 @@ class StudyTimerScreen extends StatefulWidget {
 }
 
 class _StudyTimerScreenState extends State<StudyTimerScreen> {
-  final TextEditingController _subjectCtrl = TextEditingController();
-  final TextEditingController _notesCtrl = TextEditingController();
+  final TextEditingController _subjectCtrl =
+      TextEditingController();
+
+  final TextEditingController _notesCtrl =
+      TextEditingController();
+
   DateTime? _startTime;
   Duration _elapsed = Duration.zero;
   bool _running = false;
@@ -209,54 +265,92 @@ class _StudyTimerScreenState extends State<StudyTimerScreen> {
   }
 
   void _start() {
+    final DateTime now = DateTime.now();
+
     setState(() {
-      _startTime = DateTime.now();
+      _startTime = now;
       _running = true;
       _elapsed = Duration.zero;
     });
+
     _tick();
   }
 
   Future<void> _tick() async {
     while (_running && mounted) {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!_running || !mounted) return;
+      await Future.delayed(
+        const Duration(seconds: 1),
+      );
+
+      if (!_running || !mounted) {
+        return;
+      }
+
+      final DateTime? start = _startTime;
+
+      if (start == null) {
+        return;
+      }
+
       setState(() {
-        _elapsed = DateTime.now().difference(_startTime!);
+        _elapsed = DateTime.now().difference(start);
       });
     }
   }
 
   Future<void> _finish() async {
-    setState(() => _running = false);
-    if (_startTime == null || _elapsed.inSeconds < 1) {
-      Navigator.of(context).pop();
+    final DateTime? start = _startTime;
+
+    setState(() {
+      _running = false;
+    });
+
+    if (start == null || _elapsed.inSeconds < 1) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
       return;
     }
+
     final AppState app = context.read<AppState>();
+
+    final DateTime end = DateTime.now();
+
     await app.addStudySession(
-      subject: _subjectCtrl.text.trim().isEmpty ? 'Study session' : _subjectCtrl.text.trim(),
-      startTime: _startTime!,
-      endTime: DateTime.now(),
-      notes: _notesCtrl.text.trim(),
+      startedAt: start,
+      endedAt: end,
+      subject: _subjectCtrl.text.trim().isEmpty
+          ? 'Study session'
+          : _subjectCtrl.text.trim(),
+      note: _notesCtrl.text.trim(),
     );
-    if (mounted) Navigator.of(context).pop();
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   String _formatElapsed() {
-    final int h = _elapsed.inHours;
-    final int m = _elapsed.inMinutes.remainder(60);
-    final int s = _elapsed.inSeconds.remainder(60);
-    final String mm = m.toString().padLeft(2, '0');
-    final String ss = s.toString().padLeft(2, '0');
-    if (h > 0) return '$h:$mm:$ss';
+    final int hours = _elapsed.inHours;
+    final int minutes = _elapsed.inMinutes.remainder(60);
+    final int seconds = _elapsed.inSeconds.remainder(60);
+
+    final String mm = minutes.toString().padLeft(2, '0');
+    final String ss = seconds.toString().padLeft(2, '0');
+
+    if (hours > 0) {
+      return '$hours:$mm:$ss';
+    }
+
     return '$mm:$ss';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Study session')),
+      appBar: AppBar(
+        title: const Text('Study session'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -264,26 +358,40 @@ class _StudyTimerScreenState extends State<StudyTimerScreen> {
             const Spacer(),
             Text(
               _formatElapsed(),
-              style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                fontSize: 56,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              _running ? 'Focus time running…' : 'Ready when you are.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+              _running
+                  ? 'Focus time running…'
+                  : 'Ready when you are.',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant,
                   ),
             ),
             const Spacer(),
             TextField(
               controller: _subjectCtrl,
-              decoration: const InputDecoration(hintText: 'What are you studying?'),
+              decoration: const InputDecoration(
+                hintText: 'What are you studying?',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _notesCtrl,
               minLines: 1,
               maxLines: 3,
-              decoration: const InputDecoration(hintText: 'Notes (optional)'),
+              decoration: const InputDecoration(
+                hintText: 'Notes (optional)',
+              ),
             ),
             const SizedBox(height: 20),
             SizedBox(
