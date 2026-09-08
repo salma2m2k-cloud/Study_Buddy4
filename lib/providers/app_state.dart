@@ -107,12 +107,12 @@ class AppState extends ChangeNotifier {
   // ============================================================
 
   Future<void> addTask({
-    required String title,
-    String description = '',
-    required DateTime dueAt,
-    bool reminderEnabled = true,
-    int? reminderLeadMinutes,
-  }) async {
+  required String title,
+  String description = '',
+  DateTime? dueAt,
+  bool reminderEnabled = true,
+  int? reminderLeadMinutes,
+}) async {
     final Task task = Task(
       id: _uuid.v4(),
       title: title.trim().isEmpty
