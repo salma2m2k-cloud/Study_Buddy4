@@ -40,3 +40,33 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State management
+  provider: ^6.1.2
+
+  # Local persistence
+  shared_preferences: ^2.2.3
+
+  # Real scheduled OS notifications
+  flutter_local_notifications: ^17.2.2
+
+  # Real looping class alarms
+  alarm: ^5.1.5
+
+  # Timezone-aware scheduling
+  timezone: ^0.9.4
+  flutter_timezone: ^5.1.0
+
+  # Notification / exact alarm permissions
+  permission_handler: ^11.3.1
+
+  # IDs
+  uuid: ^4.4.0
+
+  # Date formatting
+  intl: ^0.19.0
