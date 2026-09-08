@@ -41,63 +41,60 @@ class AppState extends ChangeNotifier {
   // ============================================================
 
   Future<void> bootstrap() async {
-  try {
-    debugPrint('BOOT 1: storage.init');
-    await storage.init();
+    try {
+      debugPrint('BOOT 1: storage.init');
+      await storage.init();
 
-    debugPrint('BOOT 2: notifications.init');
-    await notifications.init();
+      debugPrint('BOOT 2: notifications.init');
+      await notifications.init();
 
-    debugPrint('BOOT 2.5: class alarms.init');
-    await classAlarms.init();
+      debugPrint('BOOT 2.5: class alarms.init');
+      await classAlarms.init();
 
-    debugPrint('BOOT 3: load tasks');
-    tasks = await storage.loadTasks();
+      debugPrint('BOOT 3: load tasks');
+      tasks = await storage.loadTasks();
 
-    debugPrint('BOOT 4: load classes');
-    classes = await storage.loadClasses();
+      debugPrint('BOOT 4: load classes');
+      classes = await storage.loadClasses();
 
-    debugPrint('BOOT 5: load completions');
-    classCompletions =
-        await storage.loadClassCompletions();
+      debugPrint('BOOT 5: load completions');
+      classCompletions =
+          await storage.loadClassCompletions();
 
-    debugPrint('BOOT 6: load study sessions');
-    studySessions =
-        await storage.loadStudySessions();
+      debugPrint('BOOT 6: load study sessions');
+      studySessions =
+          await storage.loadStudySessions();
 
-    debugPrint('BOOT 7: load notes');
-    notes = await storage.loadNotes();
+      debugPrint('BOOT 7: load notes');
+      notes = await storage.loadNotes();
 
-    debugPrint('BOOT 8: load settings');
-    settings = await storage.loadSettings();
+      debugPrint('BOOT 8: load settings');
+      settings = await storage.loadSettings();
 
-    // Restore TASK notifications only.
-    // Classes use the real looping alarm service.
-    debugPrint('BOOT 9: restore task notifications');
+      debugPrint(
+        'BOOT 9: restore task notifications',
+      );
 
-    await notifications.restoreAll(
-      tasks: tasks,
-      classes: [],
-    );
+      await notifications.restoreAll(
+        tasks: tasks,
+        classes: [],
+      );
 
-    // Restore EVERY saved recurring class.
-    //
-    // Each class is stored permanently.
-    // ClassAlarmService schedules its next occurrence,
-    // so the user never has to create the class again.
-    debugPrint('BOOT 9.5: restore recurring class alarms');
+      debugPrint(
+        'BOOT 9.5: restore recurring class alarms',
+      );
 
-    await classAlarms.restoreClasses(classes);
+      await classAlarms.restoreClasses(classes);
 
-    debugPrint('BOOT 10: COMPLETE');
-  } catch (e, st) {
-    debugPrint('BOOT FAILED: $e');
-    debugPrint('$st');
+      debugPrint('BOOT 10: COMPLETE');
+    } catch (e, st) {
+      debugPrint('BOOT FAILED: $e');
+      debugPrint('$st');
+    }
+
+    isLoading = false;
+    notifyListeners();
   }
-
-  isLoading = false;
-  notifyListeners();
-}
 
   // ============================================================
   // TASKS
@@ -127,8 +124,6 @@ class AppState extends ChangeNotifier {
 
     await storage.saveTasks(tasks);
 
-    // Notification work must never prevent
-    // the form from closing.
     unawaited(
       _safeScheduleTaskReminder(task),
     );
@@ -321,13 +316,10 @@ class AppState extends ChangeNotifier {
               settings.defaultReminderLeadMinutes,
     );
 
-    // Save the class first.
     classes = [...classes, classModel];
 
     await storage.saveClasses(classes);
 
-    // Schedule the REAL looping alarm separately.
-    // It cannot prevent the form from closing.
     unawaited(
       _safeScheduleClassAlarm(classModel),
     );
@@ -346,19 +338,38 @@ class AppState extends ChangeNotifier {
 
     if (idx == -1) return;
 
+    final ClassModel oldClass = classes[idx];
+
     final ClassModel updated =
-        update(classes[idx]);
+        update(oldClass);
 
     classes = [...classes]..[idx] = updated;
 
     await storage.saveClasses(classes);
 
-    // Replace the existing alarm with the updated one.
     unawaited(
-      _safeScheduleClassAlarm(updated),
+      _replaceClassAlarm(
+        oldClass,
+        updated,
+      ),
     );
 
     notifyListeners();
+  }
+
+  Future<void> _replaceClassAlarm(
+    ClassModel oldClass,
+    ClassModel updatedClass,
+  ) async {
+    try {
+      await classAlarms.cancel(oldClass);
+      await classAlarms.schedule(updatedClass);
+    } catch (e, st) {
+      debugPrint(
+        'Class alarm replacement failed: $e',
+      );
+      debugPrint('$st');
+    }
   }
 
   Future<void> deleteClass(String id) async {
@@ -801,7 +812,7 @@ class AppState extends ChangeNotifier {
       "You've got this.",
       'Future you will thank you.',
       'Keep going — you\'re doing great.',
-      'Nice and steady wins the day.',
+      'Nice and steady wins the day',
     ];
 
     final int dayIndex =
