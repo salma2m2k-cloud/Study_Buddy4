@@ -594,7 +594,7 @@ class AppState extends ChangeNotifier {
   }) async {
     final StudySession session = StudySession(
       id: _uuid.v4(),
-      startedAt: startedAt,
+      startTime: startedAt,
       endedAt: endedAt,
       subject: subject,
       note: note,
