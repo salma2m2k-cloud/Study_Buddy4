@@ -41,62 +41,63 @@ class AppState extends ChangeNotifier {
   // ============================================================
 
   Future<void> bootstrap() async {
-    try {
-      debugPrint('BOOT 1: storage.init');
-      await storage.init();
+  try {
+    debugPrint('BOOT 1: storage.init');
+    await storage.init();
 
-      debugPrint('BOOT 2: notifications.init');
-      await notifications.init();
+    debugPrint('BOOT 2: notifications.init');
+    await notifications.init();
 
-      debugPrint('BOOT 2.5: class alarms.init');
-      await classAlarms.init();
+    debugPrint('BOOT 2.5: class alarms.init');
+    await classAlarms.init();
 
-      debugPrint('BOOT 3: load tasks');
-      tasks = await storage.loadTasks();
+    debugPrint('BOOT 3: load tasks');
+    tasks = await storage.loadTasks();
 
-      debugPrint('BOOT 4: load classes');
-      classes = await storage.loadClasses();
+    debugPrint('BOOT 4: load classes');
+    classes = await storage.loadClasses();
 
-      debugPrint('BOOT 5: load completions');
-      classCompletions =
-          await storage.loadClassCompletions();
+    debugPrint('BOOT 5: load completions');
+    classCompletions =
+        await storage.loadClassCompletions();
 
-      debugPrint('BOOT 6: load study sessions');
-      studySessions =
-          await storage.loadStudySessions();
+    debugPrint('BOOT 6: load study sessions');
+    studySessions =
+        await storage.loadStudySessions();
 
-      debugPrint('BOOT 7: load notes');
-      notes = await storage.loadNotes();
+    debugPrint('BOOT 7: load notes');
+    notes = await storage.loadNotes();
 
-      debugPrint('BOOT 8: load settings');
-      settings = await storage.loadSettings();
+    debugPrint('BOOT 8: load settings');
+    settings = await storage.loadSettings();
 
-      // Restore TASK notifications only.
-      // Classes are restored separately as real looping alarms.
-      debugPrint('BOOT 9: restore task notifications');
-      await notifications.restoreAll(
-        tasks: tasks,
-        classes: [],
-      );
+    // Restore TASK notifications only.
+    // Classes use the real looping alarm service.
+    debugPrint('BOOT 9: restore task notifications');
 
-      // Restore all saved recurring class alarms.
-      debugPrint('BOOT 9.5: restore class alarms');
+    await notifications.restoreAll(
+      tasks: tasks,
+      classes: [],
+    );
 
-      for (final ClassModel c in classes) {
-        unawaited(
-          _safeScheduleClassAlarm(c),
-        );
-      }
+    // Restore EVERY saved recurring class.
+    //
+    // Each class is stored permanently.
+    // ClassAlarmService schedules its next occurrence,
+    // so the user never has to create the class again.
+    debugPrint('BOOT 9.5: restore recurring class alarms');
 
-      debugPrint('BOOT 10: COMPLETE');
-    } catch (e, st) {
-      debugPrint('BOOT FAILED: $e');
-      debugPrint('$st');
-    }
+    await classAlarms.restoreClasses(classes);
 
-    isLoading = false;
-    notifyListeners();
+    debugPrint('BOOT 10: COMPLETE');
+  } catch (e, st) {
+    debugPrint('BOOT FAILED: $e');
+    debugPrint('$st');
   }
+
+  isLoading = false;
+  notifyListeners();
+}
 
   // ============================================================
   // TASKS
